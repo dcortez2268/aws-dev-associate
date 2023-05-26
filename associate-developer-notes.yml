@@ -2,7 +2,7 @@ AWS SECURITY TOKEN SERVICE, STS:
   provides identities assuming a role the temporary security credentials they need for access:
   sts:AssumeRole action generates temporary credentials:
   credentials are similar to access keys:
-  credentials can be given subset of permissions of permissions policy of role:
+  credentials can be given subset of permissions of permissions policy of role
   when an identity assumes a role:
     sts:AssumeRole calls are made to STS
     STS requests permissions policy from role and generates credentials based on permissions policy
@@ -11,31 +11,52 @@ AWS SECURITY TOKEN SERVICE, STS:
     AccessKeyId, Expiration, SecretAccessKey, SessionToken
 
   AssumeRoleWithWebIdentity api call:
-    returns a set of temporary security credentials for federeated users who authenticated through a public identity provider, like amazon, google, etc
+    returns a set of temporary security credentials for federated users who authenticated through a public identity provider, like amazon, google, etc:
   AssumeRoleWithSAML api call:
-    returns a set of temporary security credentials for federeated users who authenticated through your organization's identity system that implements SAML2.0, like AD
+    returns a set of temporary security credentials for federated users who authenticated through your organization's identity system that implements SAML2.0, like AD:
   GetSessionToken api call:
-    returns a set of temporary security credentials for an aws account or iam user.  you use it if you want to require MFA to allow only certain devices to access specific aws api operations
+    returns a set of temporary security credentials for an aws account or iam user.  you use it if you want to require MFA to allow only certain devices to access specific aws api operations:
     aws sts get-session-token [options]:
 
   sts:DecodeAuthorizationMessage:
-    allows a user to decode an encoded error message
+    allows a user to decode an encoded error message:
     aws sts decode-authorization-message --encoded-message 'message':
 
 -----------------------------------------------------------------------------------------------:
-S3 BUCKET KEYS (know all):
-  using S3 SEE-KMS without bucket keys:
-    each object uploaded via PUT method uses a unique DEK when using KMS key
-    the unique DEK is stored with the object
-    limits scalability
-  using S3 SEE-KMS with bucket keys:
-    KMS key is used to generate a time limited bucket key
-    time limited bucket key:
-      generates DEKs within s3, offloading the work from KMS and reducing the number of KMS api calls
-    increases scalability
+KMS ENCRYPTION PATTERNS AND ENVELOPE ENCRYPTION (KNOW ALL):
+  when data is < 4kb in size:
+    encrypt api:
+      encrypts plaintext into ciphertext by implementing CMK in KMS
+    decrypt api:
+      decrypts ciphertext into plaintext by implementing CMK in KMS
+
+  envelope encryption:
+    implement when data is greater than 4kb in size, when you need to implement DEK
+    process to encrypt data:
+      generateDataKey api:
+        returns a plaintext copy of the data key along with a copy of the encrypted data key
+        useful when you need to encrypt data immediately
+        plaintext key is used to encrypt data, is discarded, and then encrypted data is stored with encrypted data key
+      generateDataKeyWithoutPlaintext api:
+        returns only a copy of the encrypted data key
+        useful when you need to encrypt data at some point, but not immediately
+        decrypt api:
+          decrypts the data key and returns a plaintext of the data copy key
+    process to decrypt data:
+      decrypt api:
+        returns a plaintext copy of the encrypted data key stored with encrypted data
+        plaintext key is used to decrypt data and encrypted data key and plaintext copy are discarded 
+    top level plaintext key:
+      master key
+    data key caching:
+      allows you to re-use data keys instead of creating new ones for each encryption
+      the aws encryption key sdk implements data key caching
+
+  s3 bucket key:
+    kms creates a s3 bucket key that is used to create new data keys used for encrypting s3 objects INSTEAD of calling KMS every time to create new data key:
+    implemented with sse-kms encryption:
+    reduces number of api calls made to kms by 99%
     cloudtrail kms event logs now show the bucket ARN instead of object ARN
-    works with replication...object encryption is maintained
-    not retroactive
 
 -----------------------------------------------------------------------------------------------:
 CLOUDWATCH LOGS ARCHITECTURE:
@@ -46,29 +67,32 @@ CLOUDWATCH LOGS ARCHITECTURE:
       CWAgent allows you to log system, custom application, and on premises logging
     subscription side:
       log events:
-        a specific occurrence or action that is logged by a service or application
-        consist of timestamp and raw message
+        a specific occurrence or action that is logged by a service or application:
+        consist of timestamp and raw message:
+        ex: Timestamp: 2022-05-10T09:15:23Z,  Message: Page not found - 404 :
       log stream:
-        a collection of log events that are generated by a single source, such as an EC2 instance
+        a collection of log events that are generated by a single source, like an ec2 instance:
+        ex: Log Stream: WebAppServer-1:
       log group:
-        a collection of related log streams
+        a collection of related log streams:
+        ex: /aws/lambda/WebAppServer:
+        defines metric filter that analyzes patterns within log groups:
+        defines subscription filter that allows real time delivery from cw to other services:
         sets retention (by default logs are stored indefinitely), access permissions, and encryption at rest using KMS
-        defines metric filter to analyze patterns within log group and creates a metric
-        subscription filter allows real time delivery
       s3 export:
-        logs are exported to s3 bucket via CreateExportTask api call
+        logs are exported to s3 bucket via CreateExportTask api call:
         takes up to 12 hours
         you can encrypt data with only sse-s3 encryption method
       subscription filter:
         allows real time and near real time delivery of log groups
         configures pattern, destination ARN, distribution, access permissions
         near realtime delivery:
-          kinesis data firehose allows near realtime delivery
+          kinesis data firehose allows near realtime delivery:
         real time delivery:
+          kinesis data streams, lambda functions, and aws managed lambdas and elasticsearch allow realtime delivery:
           aws managed lambda function natively delivers into elasticsearch in realtime delivery
           custom lambda functions can be used to export data to nearly any destination in realtime
           can deliver to a kinesis data stream in realtime
-
 -----------------------------------------------------------------------------------------------:
 S3 REQUESTOR PAYS FEATURE:
   allows requestor of data, instead of bucket owner, to pay the cost of the request:
@@ -90,12 +114,13 @@ POLICY INTERPRETATION:
 POLICY EVALUATION LOGIC:
   for same account:
     aws checks pile of policies in this order:
+      each check not highlighted checks for denials and proceeds if no denial:
       explicit denys:
         if it denies, permission is denied and evaluation stops
       organization SCPS on identity's account:
         if it denies, permission is denied and evaluation stops
       resource policies:
-        if it allows, permission is allowed and evaluation stops
+        if it allows, permission is allowed and evaluation stops:
       IAM identity/permission boundaries:
         permission boundaries allow you to limit permissions granted
         if it denies, permission is denied and evaluation stops
@@ -103,7 +128,7 @@ POLICY EVALUATION LOGIC:
         session policies allow you only a subset of role permissions
         if it exists and it denies, permission is denied and evaluation stops
       identity policies:
-        access is denied or allowed, or implicit deny
+        access is denied or allowed, or implicit deny:
     
     for multi account (account a trying to access account b's resources):
       has same checks as above for account a and also needs a resource policy allowing in account b 
@@ -120,48 +145,50 @@ AWS CLI CREDENTIALS PROVIDER CHAIN:
 
 -----------------------------------------------------------------------------------------------:
 tracing: 
-  end to end way to follow a request
+  end to end way to follow a request:
 instrumentation:
+  to enable tracing:
   measure of a product's performance, diagnose errors, and to write trace information
 X-RAY:
   distributed tracing application, it is designed to track sessions through an application:
   aggregrates different services data to give you a single overview of flow of data:
   tracing header:
-    the first service of session generates this which is used to track a request through your distributed application
+    the first service of session generates this which is used to track a request through your distributed application:
   trace:
-    composed of all the segments generated by a single request
+    composed of all the segments generated by a single request:
     maximum size is 500kb
     trace segment:
       json representation of trace
   segments:
-    single block of data sent into xray that details requests within your application
-    contains host/ip, request, response, work done (times), and issues
+    single block of data sent into xray that details requests within your application:
+    contains host/ip, request, response, work done (times), and issues:
   subsegments:
-    more granular version of segments, and provide additional details about a call to an aws service, an external HTTP API, or a sql database
-    can instrument specific functions or lines of code in your application
+    more granular version of segments:
+    provide additional details about a call to an aws service, an external HTTP API, or a sql database:
+    can instrument specific functions or lines of code in your application:
     namespace field:
       set to "aws" for aws sdk calls and to "remote" for other downstream calls
     annotations:
-      simple key value pairs that index traces and use with filter expressions.
+      simple key value pairs that index traces and use with filter expressions:
       used to group traces
+      filter expressions:
+        find traces related to specific paths or users:
   service graph:
-    JSON document that details services and resources which make up your app
-    retained for 30 days
+    JSON document that details services and resources which make up your app:
+    retained for 30 days:
   service map:
     visual version of the service graph 
-  filter expressions:
-    find traces related to specific paths or users
   metadata:
-    more complex key value pairs with values of any type, but are not indexed.  Record data that you want to store in the trace but you don't need to use for searching traces
+    more complex key value pairs with values of any type, but are not indexed.  Record data that you want to store in the trace but you don't need to use for searching traces:
   x-ray daemon:
-    collects segments for multiple requests and uploads them to xray in one api call
-    lightweight process that runs on each EC2 instance in your application's environment
+    collects segments for multiple requests and uploads them to xray in one api call:
+    lightweight process that runs on each EC2 instance in your application's environment:
   x-ray agent:
-     a software library that you can integrate into your application's code. 
+     a x-ray daemon that works in conjunction with x-ray sdk to instrument code and send to xray:
   sampling:
-    records a portion of the requests rather than tracing every request
+    records a portion of the requests rather than tracing every request:
     reduces cost and amount of data you record
-  integrates with:
+  integrates with (know all):
     lambda
     beanstalk
     ecs
@@ -169,73 +196,70 @@ X-RAY:
     api gateway
     ec2 instances or any application server, even on premise
   how to configure?:
-    your code must import the x-ray sdk
-    you must install the x-ray daemon or enable x-ray aws integration for some services that will run the xray daemon for you
+    your code must import the x-ray sdk:
+    you must install the x-ray daemon or enable x-ray aws integration for some services that will run the xray daemon for you:
   xray troubleshooting:
     services sending data into xray require iam write permissions:
     ensure xray daemon is running:
-  to integrate with aws ray these services require configuration:
+  to integrate with aws xray these services require configuration:
     ec2: 
-      xray agent needs to be imported to run application code
-      xray daemon needs to be installed
-      needs to have instance role with proper access
+      xray agent needs to be imported to run application code:
+      xray daemon needs to be installed:
+      needs to have instance role with proper access:
     ecs:
-      xray agent in tasks
-      create a docker image that runs the xray daemon, upload it to a docker repo, and deploy to your ecs cluster
-      to allow communication with xxray daemon, allow traffic on UPD port 2000 in your task definition file
+      xray agent in tasks:
+      create a docker image that runs the xray daemon, upload it to a docker repo, and deploy to your ecs cluster:
+      to allow communication with xxray daemon, allow traffic on UPD port 2000 in your task definition file:
     lambda: 
-      there is an 'enable aws x-ray' checkbox, installs xray agent
-      make sure your application code is instrumented with the xray sdk
+      there is an 'enable aws x-ray' checkbox, installs xray agent:
+      make sure your application code is instrumented with the xray sdk:
     beanstalk:
-      daemon can be installed by setting an option in eb console or with a config file in .ebextensions/xray-daemon.config
-      agent is preinstalled
-      make sure your application code is instrumented with the xray sdk and that ec2 instance has access
+      daemon can be installed by setting an option in eb console or with a config file in .ebextensions/xray-daemon.config:
+      agent is preinstalled:
+      make sure your application code is instrumented with the xray sdk and that ec2 instance has access:
       xray daemon is not provided for multicontainer docker, you need to configure yourself
-    api gateway: per stage option
-    sns and sqs: there is an enable option
-    alb: adds trace id to the request header before sending it to target group
+    api gateway: 
+      per stage option
+    sns and sqs: 
+      there is an enable option
+    alb: 
+      adds trace id to the request header before sending it to target group:
 
   xray APIs:
     writes:
       PutTraceSegments:
-        you can send segment documents directly to xray by using the PutTraceSegments api
+        you can send segment documents directly to xray by using the PutTraceSegments api:
         if segments aren't natively supported by the service, you can implement custom inferred segments by including subsegments
-      PutTelemetryRecords: used by the aws xray daemon to upload telemetry
+      PutTelemetryRecords: 
+        used by the aws xray daemon to upload telemetry
       GetSamplingRules:
-        gets all of the sampling rules, and updates the daemons
+        gets all of the sampling rules, and updates the daemons:
     reads:
-      BatchGetTraces:
-        retrieves a list of traces specified by id
       GetTraceSummaries:
-        retrieves ids and annotations for traces available for a specified time frame.  Pass the trace IDs to BatchGetTraces to get full traces
+        retrieves ids and annotations for traces available for a specified time frame:
+      BatchGetTraces:
+        retrieves a list of traces specified by id:
       GetTraceGraph:
         retrieves a service graph for one or more specific trace ids
       GetServiceGraph:
         gets service graph
-  
-
-  
-
-
-  x-ray fetches the client ip address via:
-    the 'X-forwarded-for' header of the request
 
   lambda and xray environment variables:
-  _X_AMZN_TRACE_ID:
-    contains tracing header
-  AWS_XRAY_CONTEXT_MISSING:
-    contains behavior if function tries to record x-ray data but a tracing header is not available
-  AWS_XRAY_DAEMON_ADDRESS:
-    contains x-ray daemon's address and allows direct communication with the daemon vs implementing sdk
+    _X_AMZN_TRACE_ID:
+      contains tracing header:
+    AWS_XRAY_CONTEXT_MISSING:
+      contains behavior if function tries to record x-ray data but a tracing header is not available
+    AWS_XRAY_DAEMON_ADDRESS:
+      contains x-ray daemon's address and allows direct communication with the daemon vs implementing sdk:
   
 
 -----------------------------------------------------------------------------------------------:
-CI/CD USING AWS CODE: 5:54
+CI/CD USING AWS CODE:
   CI/CD stands for Continuous Integration and Continuous Delivery (or Deployment), which are two practices in software development that aim to streamline and automate the process of building, testing, and deploying software.
     Continuous Integration:
-      practice where developers frequently merge their code changes into a shared repository, and then automated build and test processes are triggered to ensure that the code is functioning properly and that new changes are not breaking any existing functionality.
+      practice where developers frequently merge their code changes into a shared repository: and then automated build and test processes are triggered to ensure that the code is functioning properly and that new changes are not breaking any existing functionality
     Continuous Development:
-      practice where code changes are automatically built, tested, and prepared for release to production environments.
+      practice where code changes are automatically built, tested, and prepared for release to production environments.:
 
   stages of ci/cd development pipeline:
     code:
@@ -251,7 +275,7 @@ CI/CD USING AWS CODE: 5:54
       manually configure... github (code) -> jenkins (build+test) -> jenkins/other tooling (deploy)
       integration with aws has to be configured
     with aws:
-      CodeCommit (code) -> CodeBuild (build+test) -> CodeDeploy (deploy)
+      CodeCommit (code) -> CodeBuild (build+test) -> CodeDeploy (deploy):
       CodePipeline service orchestrates all of these services together
   
   CodePipeline:
@@ -273,56 +297,57 @@ CI/CD USING AWS CODE: 5:54
     s3:
     
 -----------------------------------------------------------------------------------------------:
-CodeCommit:
-  main feature is repositories
-  authentication to access repo via CL:
-    SSH key pair: 
-      in your IAM security credentials (public key is in developer's iam user and private is in repo)
-    https:
-      git cli credential helper:
-        requires an aws credential profile, which stores access key id and secret access key
-        aws cli includes this helper by default
-      generate https git credentials and store in git credential manager:
-        you configure the git credentials manually
-
-  authorization for repo:
-    access is given via IAM identity policies
-  event driven architecture:
-    notifications:
-      allow you to send notifications to SNS or chatbot targets when events occur
-    trigger:
-      allow you to trigger SNS or lambda function targets when events occur
-
------------------------------------------------------------------------------------------------:
 CodePipeline:
-  continuous delivery tool that orchestrates CodeCommit, CodeBuild, and CodeDeploy to work together
-  pipelines are built from STAGES
-  stages can have sequential or parallel ACTIONS
-  movement between stages can be automatic or require manual approval and implements topic
+  continuous delivery tool that orchestrates CodeCommit, CodeBuild, and CodeDeploy to work together:
+  pipelines are built from STAGES:
+  stages can have sequential or parallel ACTIONS:
+  movement between stages can be automatic or require manual approval and implements topic:
   artifacts:
     files or assets input to an action or output from an action
     input artifacts: s3 -> action
     output artifact: action -> s3
   event driven:
     all state changes -> event bridge
+-----------------------------------------------------------------------------------------------:
+CodeCommit:
+  main feature is repositories:
+  authentication to access repo via CL:
+    SSH key pair: 
+      in your IAM security credentials (public key is in developer's iam user and private is in repo):
+    https:
+      git cli credential helper:
+        requires an aws credential profile, which stores access key id and secret access key:
+        aws cli includes this helper by default
+      generate https git credentials and store in git credential manager:
+        you configure the git credentials manually:
+
+  authorization for repo:
+    access is given via IAM identity policies:
+  event driven architecture:
+    notifications:
+      allow you to send notifications to SNS or chatbot targets when events occur
+    triggers:
+      allow you to trigger SNS or lambda function targets when events occur:
 
 -----------------------------------------------------------------------------------------------:
 CodeBuild:
   build as a service product
-  fully managed service that allows you to pay for only the resources consumed during builds
-  it is an alternative to having a jenkins server that would be running all the time
+  fully managed service that allows you to pay for only the resources consumed during builds:
   used for builds and tests before deployment:
-  uses docker for build environment and can be customized
+  uses docker for build environment and can be customized:
+  it is an alternative to having a jenkins server that would be running all the time
   integrates with aws services
   architecture:
-    gets source from github, codecommit, codepipeline, s3, and more
+    can get source code from github, codecommit, codepipeline, s3, and more
     buildspec.yml:
       collection of build commands and configs codebuild implements to customize build:
       has to be in the root of source folder:
       contains environment variables:
-        can reference parameter store parameters or secrets manager secrets
+        can reference parameter store parameters or secrets manager secrets:
+      to automatically encrypt build artifacts:
+        specify a kms key:
       contains config for artifacts, you can enable dependencies caching in s3:
-      four main phases:
+      four main phases (read all):
         install:
           install packages in build env, like frameworks and tooling
         pre_build:
@@ -347,14 +372,14 @@ CodeBuild:
 CodeDeploy:
   code deployment as a service
   alternative to Jenkins, Ansible, Chef, Puppet, Cloudformation, and more..
-  deploys code and prebuilt applications, not resources:
+  fully managed service that allows you to deploy code and prebuilt applications, not resources:
   can deploy to EC2, on premise servers, lambda functions, and ECS:
   implements rollbacks and can trigger cloudwatch alarm:
   CodeDeploy agent:
     required to deploy code to on premise servers:
   Appspec.yml|json:
     implements how deployments will happen:
-    contains configuration and lifecycle event hooks
+    contains configuration and lifecycle event hooks:
     config components:
       files:
         applies to ec2 instances and on premise servers
@@ -363,7 +388,7 @@ CodeDeploy:
       resources:
         applies to ecs and lambda
     lifecycle event hooks:
-      specifies the event hook for corresponding events, if there is not an event hook for the incoming event then nothing happens
+      specifies the event hook for corresponding events, if there is not an event hook for the incoming event then nothing happens:
       implementation details are different if triggered on ec2/on premises than if triggered on ecs/lambda
       ec2 / on prem hooks:
         ApplicationStop:
@@ -373,19 +398,19 @@ CodeDeploy:
         AfterInstall:
         ApplicationStart:
         ValidateService:
-          verifies that the deployment was successful or not
+          verifies that the deployment was successful or not:
       lambda/ecs hooks:
         start:
         beforeAllowTraffic:
         AllowTraffic:
         AfterAllowTraffic:
         end:
-    deployment configurations:
+    deployment configurations (know all):
       (ec2/on prem):
         in place:
           turns off all existing instances, latest version is installed, and instance is restarted
         blue/green:
-          manually create a completely new environment and switch cnam for alb
+          manually create a completely new environment and switch cname for alb:
           AllAtOnce: most downtime
           HalfAtATime: reduced capacity by 50%
           OneAtATime: slowest, lowest availability impact
@@ -405,8 +430,8 @@ CodeDeploy:
     
 -----------------------------------------------------------------------------------------------:
 SQS EXTENDED CLIENT LIBRARY:
-  used when handling messages over SQS max(256KB)
-  Java library
+  used when handling messages over SQS max(256KB):
+  Java library:
   implementation of SendMessage api call:
     sends large payloads to s3 and stores a pointer link in message stored in SQS
   (Receive/Delete)Message api call:
@@ -414,39 +439,40 @@ SQS EXTENDED CLIENT LIBRARY:
   
 -----------------------------------------------------------------------------------------------:
 LAMBDA LAYERS:
-  zip archives that allow runtimes, libraries, or other dependencies to be modularized so they can be reused between functions
-  libraries are extracted in /opt folder
+  zip archives that allow runtimes, libraries, or other dependencies to be modularized so they can be reused between functions:
+  libraries are extracted from the layers into the /opt folder:
   types:
     aws layers, custom layers, ARN reference to layer
 
 -----------------------------------------------------------------------------------------------:
 LAMBDA CONTAINER IMAGES:
-  creates lambda function that can integrate with existing container workflows
-  allows you to package code in containers within lambda, and then is added to the ECR
+  creates lambda function that can integrate with existing container workflows:
+  allows you to package code in containers within lambda, and then is added to the ECR:
   useful feature for many organizations that use containers and CI/CD processes built for containers
   Lambda Runtime API:
-    include this package inside your container images to allow interaction with lambda and your container
+    include this package inside your container images to allow interaction with lambda and your container:
   AWS Lambda Runtime Interface Emulator, RIE :
     lets you do local testing to test integration with containers and lambda without using lambda
 
 -----------------------------------------------------------------------------------------------:
 LAMBDA AND ALB INTEGRATION:
   architecture of client <-> ALB <-> LAMBDA function req/res:
-    ALB translates HTTP/S into a lambda compatible event (JSON structure)
-    lambda respons in JSON which is translated back into HTTP/S response
+    ALB translates HTTP/S into a lambda compatible event (JSON structure):
+    lambda sends response in JSON which is translated back into HTTP/S response:
+    
     single value headers... (http//catagram.io?&search=winkie):
       json includes "queryStringParameters" :{ "search" :"winkie"}
     multi-value headers... (http//catagram.io?&search=roffle&search=winkie):
       json includes "multiValueQueryStringParameters" :{ "search" :["winkie", "roffle"]}
 
 -----------------------------------------------------------------------------------------------:
-LAMBDA FUNCTION URLS:
-  allow you to configure a HTTPS endpoint in front of your lambda function without having to configure additional services besides Lamda (like api gateway)
+LAMBDA FUNCTION URLS (KNOW ALL):
+  allow you to configure a HTTPS endpoint in front of your lambda function without having to configure additional services besides Lambda (like api gateway)
   can be publicly accessible or require iam authentication
 
 -----------------------------------------------------------------------------------------------:
 LAMBDA RESOURCE POLICIES:
-  define who can invoke or manage your lambda function:
+  define who can invoke or manage your lambda function
   you can allow or deny certain entities from interacting with your lambda function
   same account permissions:
     either a identity policy/role is required for an entity to access lambda OR a lambda resource policy is required that grants entity permission to access lambda 
@@ -454,14 +480,18 @@ LAMBDA RESOURCE POLICIES:
     both an identity policy/role is required for an entity to access lambda AND a lambda resource policy is required that grants entity permission to access lambda 
     
 -----------------------------------------------------------------------------------------------:
-LAMBDA CONTEXT OBJECT:
-  object that is passed to handler in lambda function by the lambda service:
-  provides methods and properties that provide information about the invocation, function, and execution environment:
+two main objects are passed as parameters to the Lambda function handler:
+  context object:
+    object that is passed to handler in lambda function by the lambda service:
+    provides methods and properties that provide information about the invocation, function, and execution environment that allow lambda fn to interact with lambda service:
+  event object:
+    The event object represents the input data or the triggering event that invokes the Lambda function. It contains information specific to the event source that triggered the function.:
 
 -----------------------------------------------------------------------------------------------:
-API GATEWAY  HTTP METHODS AND RESOURCES:
+API GATEWAY HTTP METHODS AND RESOURCES:
   invoke URL:
-    contains gateway endpoint dns name, stage, and resource
+    contains gateway endpoint dns name, stage, and resource:
+    https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/{resource-path}:
   methods:
     like HTTP methods, but have different integrations in addition to HTTP..like Lambda, other aws services, mock, and vpc link
   
@@ -471,18 +501,20 @@ API GATEWAY USAGE PLAN: (know all)
   allows you to configure throttling limits and quota limits that are enforced on customer api keys
 
 -----------------------------------------------------------------------------------------------:
-API GATEWAY INTEGRATIONS:
+API GATEWAY INTEGRATIONS(KNOW ALL):
   phases of api gateway request/response:
   request phase: 
-    client makes a request to api gateway:
+    client makes a request to api gateway
     method request:
       defines everything about client's request to the method, (path, headers, parameters )
     integration request:
       handles proxying data to form integration can handle or passes straight through
+  
   integration phase:
     integration receives data, then performs some work, then passes data back to api gateway
+  
   response phase:
-    where response is sent to client:
+    where response is sent to client
     integration response:
       handles proxying data to form client can handle or passes straight through(headers,status codes, bodies)
     method response:
@@ -494,7 +526,7 @@ API GATEWAY INTEGRATIONS:
     http:
       backend http endpoint, requires mapping templates that transform data
     http proxy:
-      pass through to http integration unmodified, return to the client unmodified (backend needs to use supported format)
+      pass through to http integration unmodified, return to the client unmodified
     aws:
       lets an api expose aws service actions, requires mapping templates that transform data
     aws proxy (lambda):
@@ -510,45 +542,44 @@ API Swagger and OpenAPI:
     api swagger:
       OpenAPI v2
     OpenAPI specification, OAS, v3:
-      API description format for RESTful APIs
-      defines endpoints, routes, input and output parameters, and authentication methods
+      API description format for RESTful APIs:
+      defines endpoints, routes, input and output parameters, and authentication methods:
   
 -----------------------------------------------------------------------------------------------:
-ELASTIC BEANSTALK, EB:
-  allows you to upload your application, and automatically handles the details of provisioning and managing infrastructure: 
-  requires application changes:
+ELASTIC BEANSTALK, EB (KNOW ALL):
+  allows you to upload your application, and automatically handles the details of provisioning and managing infrastructure 
+  requires application changes
   PAAS, platform as a service
-  great for small dev teams
   implements cloudformation to provision resources:
-    you can customize the infrastructure as much as you want to:
+    you can customize the infrastructure as much as you want to
   platforms:
-    languages eb supports
-    built in languages, docker, and custom platforms:
+    are languages eb supports
+    built in platforms, docker, and custom platforms include:
       go, java se, tomcat, .net core, .net, node.js, php, python, ruby
       single container docker, multicontainer docker, preconfigured docker
       custom platforms via packer
   elastic beanstalk application:
-    a container for everything related to an application:
-  environments:
-    sub containers of application that contain infrastructure and configuration for a specific app version:
-    each environment is either a web server tier or a worker tier
-    web server tier:
-      designed to communicate with end users:
-    worker tier:
-      designed to process work from web server tier:
-      manages a amazon sqs queue and run a daemon process on instances that reads from the queue for you:
-      includes asg, ec2 instances, and iam role
-    each environment has its own CNAME and a generic DNS name:
-  CNAME swap:
-    environments can swap their CNAMEs for use cases like green/blue testing:
+    a container for everything related to an application
+    environments:
+      sub containers of application that contain infrastructure and configuration for a specific app version
+      each environment has its own CNAME and a generic DNS name
+      each environment is either a web server tier or a worker tier:
+        web server tier:
+          designed to communicate with end users
+        worker tier:
+          designed to process work from web server tier
+          manages a amazon sqs queue and runs a daemon process on instances that reads from the queue for you
+          includes asg, ec2 instances, and iam role
+    CNAME swap:
+      environments can swap their CNAMEs for use cases like green/blue testing
   versions:
-    points at a specific version of deployable code for an application:
-    source bundle is stored on s3:
+    points at a specific version of deployable code for an application
+    source bundle is stored on s3
   keep databases outside of elastic beanstalk:
     dbs in an ENV are lost if the env is deleted
 
 -----------------------------------------------------------------------------------------------:
-ELASTIC BEANSTALK DEPLOYMENT POLICIES:
+ELASTIC BEANSTALK DEPLOYMENT POLICIES (KNOW ALL):
   implement how application versions are deployed to environments
   different types:
     all at once:
@@ -566,7 +597,7 @@ ELASTIC BEANSTALK DEPLOYMENT POLICIES:
       canary testing.. identical to immutable but before you replace old instances with new you can test a % of traffic to new deployment
     blue/green:
       not a direct feature of eb
-      manually create a completely new environment and switch over when ready by swapping urls done
+      manually create a completely new environment and switch over when ready by swapping urls
       route 53 can be setup using a weighted policy to test new environment before swapping
 
     use the eb cli to deploy:
@@ -576,28 +607,28 @@ ELASTIC BEANSTALK DEPLOYMENT POLICIES:
 ELASTIC BEANSTALK LIFECYCLE AND RDS:
   you can create an RDS instance within an EB environment:
     the instance is then linked to the EB environment
-    you should only do this for really small scall dev and test projects
+    you should only do this for really small scale dev and test projects
     environment properties:
       RDS_HOSTNAME, RDS_PORT, RDS_DB_NAME, RDS_USERNAME, RDS_PASSWORD
-  you can create and RDS instance outside of EB:
+  you can create an RDS instance outside of EB:
     environment properties need to point at RDS instance
     data is outside of the EB env lifecycle
   
   how to decouple existing RDS instance within EB from EB environment:
-    create an RDS snapshot
-    enable "delete protection"
-    create a new eb environment with the same app version
-    ensure new environment can connect to the DB, (sg and env properties)
-    swap environments (CNAME or DNS)
-    remove sg rule from old environment
-    terminate the old environment
-    locate DELETE_FAILED stack, manually delete and select 'retain stuck resources'
+    create an RDS snapshot:
+    enable "delete protection":
+    create a new eb environment with the same app version:
+    ensure new environment can connect to the DB, (sg and env properties):
+    swap environments (CNAME or DNS):
+    remove sg rule from old environment:
+    terminate the old environment:
+    locate DELETE_FAILED stack, manually delete and select 'retain stuck resources':
 
   beanstalk lifecycle policies:
     can be based on:
       time, space
-    can store at most 1000 versions
-    option not to delete the source bundle in s3 to prevent data loss
+    can store at most 1000 versions:
+    select option not to delete the source bundle in s3 to prevent data loss:
 
 -----------------------------------------------------------------------------------------------:
 CUSTOMIZING VIA .EBEXTENSIONS:
@@ -614,7 +645,7 @@ CUSTOMIZING VIA .EBEXTENSIONS:
         resources managed by this file will be deleted if environment is deleted
 -----------------------------------------------------------------------------------------------:
 EB and HTTPS:
-  you need to apply the SSL cert to the load balancer directly:
+  you need to apply the SSL cert to the load balancer directly (2 options):
     via EB console
     via .ebextensions/securelistener-alb.config, and remember to configure security group
 
@@ -623,23 +654,23 @@ EB ENVIRONMENT CLONING:
   allows you to create a new environment by cloning an existing one:
   copies all changes you've made to environment via ebs console, but not unmanaged changes you've made via cli or api:
   you can clone via eb console, API, or "eb clone environmentName":
-  when copying RDS, the instance is copied but data is not
+  when copying RDS, the instance is copied but data is not:
   different platform branches (languages eb supports) are not guaranteed to be compatible
 
 -----------------------------------------------------------------------------------------------:
 EB AND DOCKER:
   single container mode:
-    implement when you want to only run one container on one docker host per environment
-    uses ec2 with docker, not ECS
+    implement when you want to only run one container on one docker host per environment:
+    uses ec2 with docker, not ECS:
     referred to as docker in console UI
     you provide 1 of these:
       dockerfile:
-        eb will build a docker image and use this to run a container
+        eb will build a docker image and use this to run a container:
       Dockerrun.aws.json (version 1):
-        configures what image to use, ports, volumes, and other attributes
+        configures what image to use, ports, volumes, and other attributes:
       docker-compose.yml:
-        if you use docker dompose
-  multi-container mode:
+        if you use docker compose
+  multi-container mode (KNOW ALL):
     implements multiple containers running on one or more ec2 instances per environment
     implements an elb
     creates an ecs cluster:
@@ -650,54 +681,58 @@ EB AND DOCKER:
 
 -----------------------------------------------------------------------------------------------:
 env.yaml:
-  environment configurations for elastic beanstalk
+  environment configurations for elastic beanstalk:
 cron.yaml:
-  you can define periodic tasks and add to source bundle to add jobs to your worker's environment's queue automatically
+  you can define periodic tasks and add to source bundle to add jobs to your worker's environment's queue automatically:
 
 -----------------------------------------------------------------------------------------------:
-PRACTICE TEST QUESTIONS:
+PRACTICE TEST QUESTIONS (KNOW ALL):
+
+-----------------------------------------------------------------------------------------------:
+LAMBDA:
 
 to include lambda code within a cfn template:
-  Zipfile (field inside AWS::Lambda::Function resource): 
+  Zipfile (field inside AWS::Lambda::Function resource):
     "code here"
 
-if s3 bucket is timing out when trying to list items:
-  implement max-items parameter or page-size parameter to reduce number of objects returned:
-to implement more efficient reads on large dynamodb tables:
-  reduce page size and implement query operations   
-if cli script to list items is timing out:
-  add pagination parameters, -max-items and -starting-token:
+lambda concurrent executions:
+  refers to the number of executions of your function code that is happening at same time
+  push based event sources:
+    concurrent executions = (invocations per second) x (average execution duration in seconds)
+    by default the limit per region is 1000 concurrent executions
+    aws enforces the unreserved concurrency pool will always be at least 100 concurrent executions 
+  poll based event sources:
+    concurrent executions = at most the number of shards in a kinesis data stream
 
-if you are getting 403 error when trying to upload large file with kms key to s3 bucket:
-  check to ensure you have the kms:Decrypt and kms:GenerateDataKey* actions because these permissions are required when s3 must decrypt and read data to complete the multipart upload
+errors you might see when creating lambda functions via cli with CreateFunction API:
+  InvalidParameterValueException:
+    one of the parameters in the request is invalid
+  ServiceException:
+    the lambda service encountered an internal error
 
-KCL, Kinesis Client Library:
-  ensures there is a record processor to process each shard
-  also tracks shards in the stream using a dynamodb table
-  ec2 instances contain a record processer and one KCL worker
-  number of instances should not exceed the number of shards, except for failure standy purposes:
-  number of instances can be less than number of shards because one worker can process multiple shards:
+Invoke api for lambda:
+  three types for invocationType:
+    RequestResponse:
+      default, invokes the function synchronously
+    Event:
+      invoke the function asynchronously
+    DryRun:
+      validates parameter values and verifies that the user or role has permission to invoke fn
 
-how to give access to server in an on premise environment trying to access aws services:
-  create a new IAM user with programmatic access via access keys
-  create the credential file at ~/.aws/credentials
-  it is always best practice to use role with ec2 instance, however when server is on prem then it can only access aws services via access keys
+lambda authorizers:
+  api gateway feature that allows a lambda function to control access to your api
+  token based:
+    receives the caller's identity in a bearer token
+  request parameter-based:
+    receives the caller's identity in combination of headers, query string params, and variables
+cognito authorizers:
+  api gateway feature that allows cognito to control access to your api
+  implementation:
+    create an user pool
+    create authorizer in api gateway using the cognito user pool id
+    set the name of the header that will be used from the request to the user pool as a token source for authorization
 
-projection expression:
-  allows you to get just some of dynamodb attributes rather than all of them when reading data from table
-filter expressions:
-  allows you to get just some of dynamodb items within the results returned to you when reading data from table
-error retries and exponential backoff:
-  uses progressively longer waits between retries for consecutive error responses
-
-Exponential backoff:
-  use whenever you get ThrottlingExceptionError:
-    you'll get this error when you use too many api calls for your api limits
-  functionality is automatically implemented in sdk api calls
-  implement yourself when:
-    you receive 500 server errors
-    throttling issues
-
+-----------------------------------------------------------------------------------------------:
 AWS SAM, serverless application model:
   toolkit that improves the developer experience of building and running serverless applications on aws
   benefits:
@@ -730,50 +765,16 @@ AWS SAM, serverless application model:
     sam cli + aws toolkits:
       allows you to debug your lambda fns locally and execute code line by line
 
-errors you might see when creating lambda functions via cli with CreateFunction API:
-  InvalidParameterValueException:
-    one of the parameters in the request is invalid
-  ServiceException:
-    the lambda service encountered an internal error
+-----------------------------------------------------------------------------------------------:
+API GATEWAY:
 
-EventBridge rules and dynamodb:
-  rules are not capable of detecting table level events from dynamodb
-
-
-KMS ENCRYPTION PATTERNS AND ENVELOPE ENCRYPTION:
-  when data is < 4kb in size:
-    encrypt api:
-      encrypts plaintext into ciphertext by implementing CMK in KMS
-    decrypt api:
-      decrypts ciphertext into plaintext by implementing CMK in KMS
-
-  envelope encryption:
-    implement when data is greater than 4kb in size, when you need to implement DEK
-    process to encrypt data:
-      generateDataKey api:
-        returns a plaintext copy of the data key along with a copy of the encrypted data key
-        useful when you need to encrypt data immediately
-        plaintext key is used to encrypt data, is discarded, and then encrypted data is stored with encrypted data key
-      generateDataKeyWithoutPlaintext api:
-        returns only a copy of the encrypted data key
-        useful when you need to encrypt data at some point, but not immediately
-        decrypt api:
-          decrypts the data key and returns a plaintext of the data copy key
-    process to decrypt data:
-      decrypt api:
-        returns a plaintext copy of the encrypted data key stored with encrypted data
-        plaintext key is used to decrypt data and encrypted data key and plaintext copy are discarded 
-    top level plaintext key:
-      master key
-    data key caching:
-      allows you to re-use data keys instead of creating new ones for each encryption
-      the aws encryption key sdk implements data key caching
-
-  s3 bucket key:
-    implemented with ss3-kms encryption
-    reduces number of api calls made to kms by 99%
-    kms creates a s3 bucket key that is used to create new data keys used for encrypting s3 objects INSTEAD of calling KMS every time to create new data key 
-
+Exponential backoff:
+  use whenever you get ThrottlingExceptionError:
+    you'll get this error when you use too many api calls for your api limits
+  functionality is automatically implemented in sdk api calls
+  implement yourself when:
+    you receive 500 server errors
+    throttling issues
 
 how to invalidate api gateway cache (know all):
   from the ui:
@@ -788,20 +789,16 @@ how to invalidate api gateway cache (know all):
 aws_iam method authorization type for api gateway:
   allows you to limit the api to only be accessed by iam users or roles
 
-lambda concurrent executions:
-  refers to the number of executions of your function code that is happening at same time
-  push based event sources:
-    concurrent executions = (invocations per second) x (average execution duration in seconds)
-    by default the limit per region is 1000 concurrent executions
-    aws enforces the unreserved concurrency pool will always be at least 100 concurrent executions 
-  poll based event sources:
-    concurrent executions = at most the number of shards in a kinesis data stream
-
 https status code errors in api gateway:
   504:
-    integration failure, integration timeout, the integration timeout lasts from 50ms to 29 seconds for all integration types
+    integration failure, integration timeout, the integration timeout lasts from 50ms to 29 seconds for all integration types:
   502 or 429:
     too many requests and api gateway is throttling
+
+lambda and codedeploy:
+  codedeploy can help you automate traffic shift for lambda aliases via the SAM framework
+-----------------------------------------------------------------------------------------------:
+DYNAMODB:
 
 dynamodb errors:
   ProvisionedThroughputExceededException:
@@ -840,7 +837,14 @@ dynamodb operations:
       recommended but takes some time
     use aws data pipeline:
     scan and implement PutItem or BatchWriteItem:
-      implement your own code  
+      implement your own code 
+
+  projection expression:
+    allows you to get just some of dynamodb attributes rather than all of them when reading data from table
+  filter expressions:
+    allows you to get just some of dynamodb items within the results returned to you when reading data from table
+  error retries and exponential backoff:
+    uses progressively longer waits between retries for consecutive error responses 
   
 dynamodb write types:
   concurrent:
@@ -880,43 +884,17 @@ dynamodb access control:
       this condition allows a user to only access items that are associated with their partition key
     attributes:
       limits specific attributes the user can see
-    
 
-  
+EventBridge rules and dynamodb:
+  rules are not capable of detecting table level events from dynamodb
 
-logs in RDS:
+kinesis adapter:
+  recommended way to consume streams from dynamodb for real time processing of data
+
+-----------------------------------------------------------------------------------------------:
+Logs in RDS:
   by default error logs are published to cloudwatch
   you can also enable slow query logs and audit logs
-
-Invoke api for lambda:
-  three types for invocationType:
-    RequestResponse:
-      default, invokes the function synchronously
-    Event:
-      invoke the function asynchronously
-    DryRun:
-      validates parameter values and verifies that the user or role has permission to invoke fn
-
-lambda authorizers:
-  api gateway feature that allows a lambda function to control access to your api
-  token based:
-    receives the caller's identity in a bearer token
-  request parameter-based:
-    receives the caller's identity in combination of headers, query string params, and variables
-cognito authorizers:
-  api gateway feature that allows cognito to control access to your api
-  implementation:
-    create an user pool
-    create authorizer in api gateway using the cognito user pool id
-    set the name of the header that will be used from the request to the user pool as a token source for authorization
-
-
-difference between 's3:PostObject' and 's3:PutObject':
-  both upload an object to bucket, but different method of uploading
-  post:
-    uploads object via HTML form
-  put:
-    uploads object via pre-signed url or s3 endpoint
 
 ecs task placement process:
   ecs identifies the instances that satisfy requirements in the task definition:
@@ -959,12 +937,10 @@ dry run:
       lets us know we do have the access permissions to run command
 
 
-kinesis adapter:
-  recommended way to consume streams from dynamodb for real time processing of data
-
 amazon cognito sync:
   enables cross device syncing of application related user data for one user
   you can use it to synchronoize user profile data across mobile devices and the web without requiring your own backend
+  deprecated, recommended to use appsync instead:
 
 aws distro for opentelemetry:
   broader tracing solution that includes, xray and other tracing solutions
@@ -1013,12 +989,9 @@ before a cloudformation template can be used by cloudformation, it must be uploa
 
 cloudwatch synthetics canary:
   configurable script that monitors your resources and reproduces what your customers do programmatically to find issues before customers are impacted
-
-lambda and codedeploy:
-  codedeploy can help you automate traffic shift for lambda aliases via the SAM framework
   
 codeArtifact:
-  artifact management system that helps you store and retrieve software dependencies
+  artifact management ystem that helps you store and retrieve software dependencies
   implements common dependency management tools such as maven, gradle, npm, yarn, twine, pip, and nuget
 
 amazon codeGuru:
@@ -1051,6 +1024,52 @@ Amazon Managed Streaming for Apache Kafka (Amazon MSK):
 
 aws AppConfig:
   allows you to deploy dynamic configuration changes to your applications independently of any code deployments because the configurations are stored outside of the app in AppConfig
+
+when deleting stacks with references to other stacks:
+  delete the stacks that import the values first, and lastly delete the stack with outputs
+
+commands to run when you want to pull existing docker images from ecr:
+  (aws ecr get-login --no-include-email)
+  docker pull 31431432.dkr.ecr.region/repositoryName:version
+
+how to migrate a elastic beanstalk environment from account a to account b:
+  create a saved configuration in team a's account and download it to local machine
+  make the account specific parameter changes and upload to s3 bucket in account b
+  from the elb console in account b, create an application from saved configurations
+
+configuration file for ecs clusters:
+  /etc/ecs/ecs.config
+
+to retrieve an ip from a client that connects to an elb:
+  retrieve the 'X-forwarded-for' header of the request
+
+if s3 bucket is timing out when trying to list items:
+  implement max-items parameter or page-size parameter to reduce number of objects returned
+to implement more efficient reads on large dynamodb tables:
+  reduce page size and implement query operations   
+if cli script to list items is timing out:
+  add pagination parameters, -max-items and -starting-token
+
+if you are getting 403 error when trying to upload large file with kms key to s3 bucket:
+  check to ensure you have the kms:Decrypt and kms:GenerateDataKey* actions because these permissions are required when s3 must decrypt and read data to complete the multipart upload
+
+difference between 's3:PostObject' and 's3:PutObject':
+  both upload an object to bucket, but different method of uploading
+  post:
+    uploads object via HTML form
+  put:
+    uploads object via pre-signed url or s3 endpoint
+
+KCL, Kinesis Client Library:
+  ensures ec2 instances contain a record processer to process each shard and one KCL worker
+  number of instances should not exceed the number of shards:
+  number of instances can be less than number of shards because one worker can process multiple shards:
+  also tracks shards in the stream using a dynamodb table
+
+how to give access to server in an on premise environment trying to access aws services:
+  create a new IAM user with programmatic access via access keys
+  create the credential file at ~/.aws/credentials
+  it is always best practice to use role with ec2 instance, however when server is on prem then it can only access aws services via access keys
 
 
 
