@@ -486,11 +486,11 @@ LAMBDA RESOURCE POLICIES:
     both an identity policy/role is required for an entity to access lambda AND a lambda resource policy is required that grants entity permission to access lambda 
     
 -----------------------------------------------------------------------------------------------:
-two main objects are passed as parameters to the Lambda function handler:
+two main objects are passed as parameters to the Lambda function handler (KNOW ALL):
   context object:
-    provides methods and properties that provide information about the invocation, function, and execution environment that allow lambda fn to interact with lambda service:
+    provides methods and properties that provide information about the invocation, function, and execution environment that allow lambda fn to interact with lambda service
   event object:
-    The event object represents the input data or the triggering event that invokes the Lambda function. It contains information specific to the event source that triggered the function.:
+    provides methods and properties that provide input data or the triggering event that invokes the Lambda function
 
 -----------------------------------------------------------------------------------------------:
 API GATEWAY HTTP METHODS AND RESOURCES:
